@@ -1,0 +1,264 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: reqon-postgres
+    environment:
+      POSTGRES_USER: reqon
+      POSTGRES_PASSWORD: reqon
+      POSTGRES_DB: reqon
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U reqon" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - reqon-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: reqon-redis
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - reqon-network
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.12.2
+    container_name: reqon-elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -s -f http://localhost:9200/_cluster/health || exit 1" ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - reqon-network
+
+  neo4j:
+    image: neo4j:5-community
+    container_name: reqon-neo4j
+    environment:
+      NEO4J_AUTH: neo4j/reqon123
+      NEO4J_apoc_export_file_enabled: "true"
+      NEO4J_apoc_import_file_enabled: "true"
+      NEO4J_apoc_import_file_use__neo4j__config: "true"
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    healthcheck:
+      test: [ "CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:7474 || exit 1" ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - reqon-network
+
+  minio:
+    image: minio/minio:RELEASE.2024-03-05T04-48-44Z
+    container_name: reqon-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+      MINIO_DEFAULT_BUCKETS: reqon-artifacts
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:9000/minio/health/live" ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - reqon-network
+
+  minio-init:
+    image: minio/mc
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c " /usr/bin/mc alias set myminio http://minio:9000 minioadmin minioadmin; /usr/bin/mc mb myminio/reqon-artifacts --ignore-existing; /usr/bin/mc anonymous set public myminio/reqon-artifacts; exit 0; "
+    networks:
+      - reqon-network
+
+  api:
+    build:
+      context: .
+      dockerfile: infra/docker/api.Dockerfile
+    container_name: reqon-api
+    command: uvicorn apps.api.main:app --host 0.0.0.0 --port 8000 --reload
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+    networks:
+      - reqon-network
+
+  worker:
+    build:
+      context: .
+      dockerfile: infra/docker/worker.Dockerfile
+    container_name: reqon-worker
+    command: celery -A apps.crawler.tasks worker --loglevel=info
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    networks:
+      - reqon-network
+
+  worker-beat:
+    build:
+      context: .
+      dockerfile: infra/docker/worker.Dockerfile
+    container_name: reqon-worker-beat
+    command: celery -A apps.crawler.tasks beat --loglevel=info
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - reqon-network
+
+  crawler:
+    build:
+      context: .
+      dockerfile: infra/docker/crawler.Dockerfile
+    container_name: reqon-crawler
+    # This might run via celery or standalone gRPC/REST. We'll run it as a Celery worker specifically configured for Playwright
+    command: celery -A apps.crawler.tasks worker -Q crawler_queue --concurrency=3 --loglevel=info
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - reqon-network
+
+  dashboard:
+    build:
+      context: apps/dashboard
+      dockerfile: ../../infra/docker/dashboard.Dockerfile
+    container_name: reqon-dashboard
+    env_file:
+      - .env
+    volumes:
+      - ./apps/dashboard:/app
+      - /app/node_modules
+    ports:
+      - "3000:3000"
+    networks:
+      - reqon-network
+
+  nginx:
+    image: nginx:alpine
+    container_name: reqon-nginx
+    volumes:
+      - ./infra/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "80:80"
+    depends_on:
+      - api
+      - dashboard
+    networks:
+      - reqon-network
+
+  prometheus:
+    image: prom/prometheus:v2.50.1
+    container_name: reqon-prometheus
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - reqon-network
+
+  grafana:
+    image: grafana/grafana:10.3.3
+    container_name: reqon-grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning
+    ports:
+      - "3001:3000"
+    depends_on:
+      - prometheus
+    networks:
+      - reqon-network
+
+  flower:
+    image: mher/flower
+    container_name: reqon-flower
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+    ports:
+      - "5555:5555"
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - reqon-network
+
+networks:
+  reqon-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  es_data:
+  neo4j_data:
+  neo4j_logs:
+  minio_data:
+  prometheus_data:
+  grafana_data:

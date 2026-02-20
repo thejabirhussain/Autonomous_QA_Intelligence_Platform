@@ -1,0 +1,22 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: reqon-api
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: reqon-api
+  template:
+    metadata:
+      labels:
+        app: reqon-api
+    spec:
+      containers:
+      - name: api
+        image: reqon/api:latest
+        ports:
+        - containerPort: 8000
+        envFrom:
+        - configMapRef:
+            name: reqon-config

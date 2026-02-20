@@ -1,0 +1,22 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  - job_name: 'fastapi-backend'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['api:8000']
+
+  - job_name: 'celery-worker'
+    static_configs:
+      - targets: ['worker:8000'] # Assuming we add an exporter
+
+  - job_name: 'nextjs-dashboard'
+    metrics_path: '/api/metrics'
+    static_configs:
+      - targets: ['dashboard:3000']
