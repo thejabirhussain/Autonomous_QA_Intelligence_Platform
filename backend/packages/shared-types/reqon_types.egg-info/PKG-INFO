@@ -1,0 +1,5 @@
+Metadata-Version: 2.4
+Name: reqon-types
+Version: 0.1.0
+Requires-Dist: pydantic>=2.0.0
+Dynamic: requires-dist

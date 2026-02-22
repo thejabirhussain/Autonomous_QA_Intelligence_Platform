@@ -1,0 +1,6 @@
+setup.py
+reqon_config.egg-info/PKG-INFO
+reqon_config.egg-info/SOURCES.txt
+reqon_config.egg-info/dependency_links.txt
+reqon_config.egg-info/requires.txt
+reqon_config.egg-info/top_level.txt
