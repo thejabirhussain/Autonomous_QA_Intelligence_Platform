@@ -14,7 +14,9 @@ class BrokenImagesDetector(BaseDetector):
             () => {
                 const issues = [];
                 document.querySelectorAll('img').forEach(img => {
-                    if (img.naturalWidth === 0 && img.src && !img.src.startsWith('data:')) {
+                    if (img.complete && img.naturalWidth === 0 && img.src && !img.src.startsWith('data:')) {
+                        // Ignore tiny tracking pixels
+                        if (img.getAttribute('width') === '1' || img.getAttribute('height') === '1') return;
                         issues.push({src: img.src});
                     }
                 });

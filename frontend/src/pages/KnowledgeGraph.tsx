@@ -1,5 +1,9 @@
 import { useEffect, useState } from "react";
 import CytoscapeComponent from 'react-cytoscapejs';
+import cytoscape from 'cytoscape';
+import fcose from 'cytoscape-fcose';
+
+cytoscape.use(fcose);
 
 const CYTO_STYLESHET = [
     {
@@ -68,6 +72,7 @@ const CYTO_STYLESHET = [
 export default function KnowledgeGraphPage() {
     const [elements, setElements] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
+    const [selectedNode, setSelectedNode] = useState<any>(null);
 
     useEffect(() => {
         const loadGraph = async () => {
@@ -114,28 +119,105 @@ export default function KnowledgeGraphPage() {
                     <CytoscapeComponent
                         elements={elements}
                         stylesheet={CYTO_STYLESHET}
-                        style={{ width: '100%', height: '100%', backgroundColor: '#0f172a' }} // slate-900 
-                        layout={{ name: 'cose', padding: 50 }}
+                        layout={{ name: 'fcose', nodeRepulsion: 4500, idealEdgeLength: 50, padding: 50, randomize: true, animate: false } as any}
                         userPanningEnabled={true}
                         userZoomingEnabled={true}
+                        cy={(cy) => {
+                            cy.on('tap', 'node', (evt) => {
+                                const node = evt.target;
+                                setSelectedNode(node.data());
+                            });
+                            cy.on('tap', (evt) => {
+                                if (evt.target === cy) {
+                                    setSelectedNode(null);
+                                }
+                            });
+                        }}
                     />
                 )}
                 {elements.length === 0 && !loading && (
                     <div className="flex items-center justify-center h-full text-muted-foreground">No graph data available. Run a scan first.</div>
                 )}
 
+                {selectedNode && (
+                    <div className="absolute top-0 left-0 h-full w-96 bg-background/95 backdrop-blur-md border-r border-border p-6 shadow-2xl z-30 overflow-y-auto transform transition-transform">
+                        <div className="flex justify-between items-start mb-6 gap-4">
+                            <h2 className="text-xl font-bold break-words flex-1 bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-primary">
+                                {selectedNode.label || 'Node Details'}
+                            </h2>
+                            <button onClick={() => setSelectedNode(null)} className="text-muted-foreground hover:text-foreground bg-secondary/50 hover:bg-secondary rounded-full p-2 mt-1">
+                                ✕
+                            </button>
+                        </div>
+
+                        <div className="space-y-5">
+                            <div className="space-y-1">
+                                <p className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Type</p>
+                                <div className="font-medium capitalize text-foreground">{selectedNode.type || 'Unknown'}</div>
+                            </div>
+
+                            {selectedNode.type === 'issue' && selectedNode.severity && (
+                                <div className="space-y-1">
+                                    <p className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Severity</p>
+                                    <span className={`inline-block px-3 py-1 rounded text-xs font-bold border ${selectedNode.severity === 'critical' ? 'bg-red-500/10 text-red-500 border-red-500/20' :
+                                        selectedNode.severity === 'high' ? 'bg-red-400/10 text-red-400 border-red-400/20' :
+                                            selectedNode.severity === 'medium' ? 'bg-amber-500/10 text-amber-500 border-amber-500/20' :
+                                                'bg-blue-500/10 text-blue-500 border-blue-500/20'
+                                        }`}>
+                                        {selectedNode.severity.toUpperCase()}
+                                    </span>
+                                </div>
+                            )}
+
+                            {selectedNode.description && (
+                                <div className="space-y-1">
+                                    <p className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Description</p>
+                                    <p className="text-sm bg-muted/40 p-4 rounded-lg border border-border text-foreground/90 leading-relaxed shadow-inner">
+                                        {selectedNode.description}
+                                    </p>
+                                </div>
+                            )}
+
+                            {selectedNode.category && (
+                                <div className="space-y-1">
+                                    <p className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Category</p>
+                                    <div className="font-medium text-foreground">{selectedNode.category}</div>
+                                </div>
+                            )}
+
+                            <div className="space-y-2 mt-8">
+                                <p className="text-xs uppercase tracking-wider text-muted-foreground font-semibold border-b border-border pb-2">Technical Properties</p>
+                                <div className="bg-card rounded-lg border border-border overflow-hidden shadow-sm">
+                                    {Object.entries(selectedNode).map(([key, value]) => {
+                                        if (['id', 'label', 'type', 'severity', 'description', 'category'].includes(key)) return null;
+                                        if (value === null || value === undefined || value === '') return null;
+                                        return (
+                                            <div key={key} className="flex flex-col border-b border-border/50 p-3 auto-rows-max last:border-0 hover:bg-secondary/20 transition-colors">
+                                                <span className="text-[10px] sm:text-xs text-muted-foreground mb-1 block capitalize font-medium">{key.replace(/_/g, ' ')}</span>
+                                                <span className="text-sm font-mono break-words whitespace-pre-wrap flex-1 text-foreground/80">
+                                                    {typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value)}
+                                                </span>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 <div className="absolute top-4 right-4 bg-background/80 backdrop-blur-md border border-border p-4 rounded-lg shadow-lg z-20">
                     <h3 className="font-bold mb-2 text-sm">Legend</h3>
                     <div className="space-y-2 text-xs">
-                        <div className="flex items-center gap-2"><div className="w-4 h-4 rounded-full bg-blue-500"></div> Page / Route</div>
+                        <div className="flex items-center gap-2"><div className="w-4 h-4 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.5)]"></div> Page / Route</div>
                         <div className="flex items-center gap-2">
-                            <div className="w-0 h-0 border-l-[8px] border-r-[8px] border-b-[14px] border-l-transparent border-r-transparent border-b-red-800"></div> Critical Defect
+                            <div className="w-0 h-0 border-l-[8px] border-r-[8px] border-b-[14px] border-l-transparent border-r-transparent border-b-red-800 drop-shadow-[0_0_6px_rgba(153,27,27,0.5)]"></div> Critical Defect
                         </div>
                         <div className="flex items-center gap-2">
-                            <div className="w-0 h-0 border-l-[8px] border-r-[8px] border-b-[14px] border-l-transparent border-r-transparent border-b-red-500"></div> High Defect
+                            <div className="w-0 h-0 border-l-[8px] border-r-[8px] border-b-[14px] border-l-transparent border-r-transparent border-b-red-500 drop-shadow-[0_0_6px_rgba(239,68,68,0.5)]"></div> High Defect
                         </div>
                         <div className="flex items-center gap-2">
-                            <div className="w-0 h-0 border-l-[8px] border-r-[8px] border-b-[14px] border-l-transparent border-r-transparent border-b-amber-500"></div> Medium Defect
+                            <div className="w-0 h-0 border-l-[8px] border-r-[8px] border-b-[14px] border-l-transparent border-r-transparent border-b-amber-500 drop-shadow-[0_0_6px_rgba(245,158,11,0.5)]"></div> Medium Defect
                         </div>
                     </div>
                 </div>

@@ -13,7 +13,11 @@ class JavaScriptErrorDetector(BaseDetector):
             if log.get("type") == "error":
                 text = log.get("text", "")
                 
-                severity = "critical" if "TypeError" in text or "ReferenceError" in text else "high"
+                # Ignore common benign errors
+                if "cast_sender.js" in text or "favicon" in text or "extension" in text or "the server responded with a status of 404" in text:
+                    continue
+                
+                severity = "critical" if "TypeError" in text or "ReferenceError" in text else "medium"
                 
                 issues.append(self.create_issue(
                     subcategory="console_error",

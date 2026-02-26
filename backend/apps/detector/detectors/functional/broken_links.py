@@ -1,6 +1,6 @@
 import httpx
 import asyncio
-from typing import List, Any
+from typing import List, Any, Optional
 from urllib.parse import urljoin
 
 from reqon_types.models import PageData, RawIssue
@@ -16,14 +16,19 @@ class BrokenLinksDetector(BaseDetector):
         
         async def check_link(href: str) -> Optional[RawIssue]:
             url = urljoin(page_data.url, href)
-            if not url.startswith('http'):
+            if not url.startswith('http') or any(url.startswith(scheme) for scheme in ['mailto:', 'tel:', 'javascript:']):
                 return None
                 
             try:
-                async with httpx.AsyncClient(timeout=timeout) as client:
+                async with httpx.AsyncClient(timeout=timeout, verify=False) as client:
                     response = await client.head(url, follow_redirects=True)
                     if response.status_code >= 400:
-                        severity = "high" if response.status_code == 404 else "medium"
+                        severity = "high"
+                        if response.status_code >= 500:
+                            severity = "critical"
+                        elif response.status_code in (401, 403):
+                            severity = "medium"
+                            
                         return self.create_issue(
                             subcategory="http_error",
                             severity=severity,

@@ -1,6 +1,9 @@
 import { useState, useEffect } from "react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 import { Download, Filter } from "lucide-react";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
+import Papa from "papaparse";
 
 export default function IssuesAnalyticsPage() {
     const [activeTab, setActiveTab] = useState<'analytics' | 'list'>('analytics');
@@ -41,6 +44,90 @@ export default function IssuesAnalyticsPage() {
         loadData();
     }, []);
 
+    const handleExportCSV = () => {
+        if (!issues || issues.length === 0) return;
+
+        const csv = Papa.unparse(issues.map(i => ({
+            ID: i.id,
+            Title: i.title,
+            Severity: (i.severity || '').toString().toUpperCase(),
+            Category: i.category,
+            Page: i.page,
+            Description: i.description
+        })));
+
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.setAttribute("href", url);
+        link.setAttribute("download", `reqon-scan-report-${new Date().toISOString().split('T')[0]}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
+    const handleExportPDF = () => {
+        if (!issues || issues.length === 0) return;
+
+        const doc = new jsPDF();
+
+        // Header
+        doc.setFontSize(22);
+        doc.text("ReQon - Actionable QA Report", 14, 20);
+        doc.setFontSize(11);
+        doc.setTextColor(100);
+        doc.text(`Generated on: ${new Date().toLocaleString()}`, 14, 28);
+        doc.text(`Total Issues Found: ${issues.length}`, 14, 34);
+
+        // Calculate severity totals for a summary section
+        const totals = issues.reduce((acc, i) => {
+            acc[i.severity] = (acc[i.severity] || 0) + 1;
+            return acc;
+        }, {} as Record<string, number>);
+
+        doc.setFontSize(14);
+        doc.setTextColor(0);
+        doc.text("Severity Summary", 14, 45);
+        doc.setFontSize(10);
+        doc.text(`Critical: ${totals['critical'] || 0} | High: ${totals['high'] || 0} | Medium: ${totals['medium'] || 0} | Low: ${totals['low'] || 0}`, 14, 52);
+
+        // Issues Table
+        const tableData = issues.map(i => [
+            i.id.substring(0, 8),
+            (i.severity || '').toUpperCase(),
+            i.category,
+            i.title,
+            i.page
+        ]);
+
+        autoTable(doc, {
+            startY: 60,
+            head: [['ID', 'Severity', 'Category', 'Issue', 'Page']],
+            body: tableData,
+            theme: 'striped',
+            headStyles: { fillColor: [59, 130, 246] }, // blue-500
+            styles: { fontSize: 8, cellPadding: 3 },
+            columnStyles: {
+                0: { cellWidth: 20 },
+                1: { cellWidth: 20 },
+                2: { cellWidth: 25 },
+                3: { cellWidth: 'auto' },
+                4: { cellWidth: 40 }
+            },
+            didParseCell: function (data) {
+                if (data.section === 'body' && data.column.index === 1) { // Severity column
+                    const sev = data.cell.raw as string;
+                    if (sev === 'CRITICAL') data.cell.styles.textColor = [220, 38, 38]; // red-600
+                    else if (sev === 'HIGH') data.cell.styles.textColor = [239, 68, 68]; // red-500
+                    else if (sev === 'MEDIUM') data.cell.styles.textColor = [245, 158, 11]; // amber-500
+                    else if (sev === 'LOW') data.cell.styles.textColor = [59, 130, 246]; // blue-500
+                }
+            }
+        });
+
+        doc.save(`reqon-scan-report-${new Date().toISOString().split('T')[0]}.pdf`);
+    };
+
     return (
         <div className="p-8 space-y-8 max-w-7xl mx-auto w-full">
             <div className="flex justify-between items-end">
@@ -50,11 +137,17 @@ export default function IssuesAnalyticsPage() {
                 </div>
 
                 <div className="flex gap-2">
-                    <button className="flex items-center gap-2 bg-secondary text-secondary-foreground hover:bg-secondary/80 px-4 py-2 rounded-lg font-medium text-sm transition-colors">
+                    <button
+                        onClick={handleExportPDF}
+                        disabled={issues.length === 0}
+                        className="flex items-center gap-2 bg-secondary text-secondary-foreground hover:bg-secondary/80 px-4 py-2 rounded-lg font-medium text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
                         <Download className="w-4 h-4" />
                         Export PDF Report
                     </button>
-                    <button className="flex items-center gap-2 bg-primary text-primary-foreground hover:bg-primary/90 px-4 py-2 rounded-lg font-medium text-sm transition-colors">
+                    <button
+                        onClick={handleExportCSV}
+                        disabled={issues.length === 0}
+                        className="flex items-center gap-2 bg-primary text-primary-foreground hover:bg-primary/90 px-4 py-2 rounded-lg font-medium text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
                         <Download className="w-4 h-4" />
                         Export CSV
                     </button>

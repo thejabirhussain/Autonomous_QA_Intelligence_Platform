@@ -59,7 +59,7 @@ class AutonomousCrawler:
                         continue
                         
                     page_data, new_links = res
-                    self.visited_urls.add(page_data.url)
+                    self.visited_urls.add(page_data.url_hash)
                     
                     yield CrawlerEvent("page_crawled", {
                         "url": page_data.url,
@@ -71,7 +71,9 @@ class AutonomousCrawler:
                     
                     # Add new links to queue
                     for link in new_links:
-                        if self._should_crawl_url(link, config.target_url, config):
+                        link_hash = self._hash_url(link)
+                        if self._should_crawl_url(link, config.target_url, config) and link_hash not in self.discovered_urls:
+                            self.discovered_urls.add(link_hash)
                             queue.append((link, depth + 1, page_data.url))
                             
         finally:
@@ -218,7 +220,12 @@ class AutonomousCrawler:
             return {}
 
     def _hash_url(self, url: str) -> str:
-        return hashlib.sha256(url.encode()).hexdigest()
+        parsed = urlparse(url)
+        normalized = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+        if parsed.query:
+            normalized += f"?{parsed.query}"
+        normalized = normalized.rstrip("/")
+        return hashlib.sha256(normalized.encode()).hexdigest()
 
     def _is_duplicate(self, url_hash: str) -> bool:
         return url_hash in self.visited_urls
