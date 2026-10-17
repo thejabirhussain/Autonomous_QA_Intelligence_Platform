@@ -131,3 +131,11 @@ To run the application natively for development and debugging:
    - You will see live real-time console streaming as the Celery worker discovers pages and runs defect detectors natively in Playwright.
    - Navigate to the **Knowledge Graph** tab to interact with the visual map of defects populated via Neo4j.
    - Navigate to the **Issues & Analytics** tab to view pie charts and detailed lists of identified UI, UX, and Functional defects.
+
+---
+
+## Ownership and licence
+
+Copyright (c) 2026 **Mohammed Jabir Hussain Shaik** ([@thejabirhussain](https://github.com/thejabirhussain)). **All rights reserved.**
+
+This is proprietary work, published for viewing and evaluation only. Copying, reusing, modifying, redistributing, using it to train AI models, or presenting any part of it as your own is **not permitted** without written permission. See [LICENSE](LICENSE). Permission requests: thejabirhussain@gmail.com
